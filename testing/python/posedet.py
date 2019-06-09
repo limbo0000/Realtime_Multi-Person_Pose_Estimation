@@ -209,15 +209,15 @@ def Detect(oriImg, net, multiplier, param, model, txt='TEXT', display=False):
             index  = subset[n][idx]
             if index == -1:
                 f.write(str(idx))
-                f.write('None')
-                f.write('None')
+                f.write(' None')
+                f.write(' None')
                 f.write('\n')
                 continue
     
             point_y = candidate[index.astype(int), 1]
             point_x = candidate[index.astype(int), 0]
             f.write(str(idx))
-            f.write(str(point_x))
+            f.write(' '+str(point_x)+' ')
             f.write(str(point_y))
             f.write('\n')
             print(idx, point_x, point_y)
