@@ -15,6 +15,7 @@ import scipy
 from scipy.ndimage.filters import gaussian_filter
 import imageio
 
+__all__=['get_seq']
 
 def netInit(param, model):
     if param['use_gpu']: 
@@ -26,7 +27,7 @@ def netInit(param, model):
     return net
 
 
-def Detect(oriImg, net, multiplier, param, model, txt='TEXT', display=False):
+def Detect(oriImg, net, multiplier, param, model, txt='TEXT', display=False, get_vector=False):
     
     heatmap_avg = np.zeros((oriImg.shape[0], oriImg.shape[1], 19))
     paf_avg = np.zeros((oriImg.shape[0], oriImg.shape[1], 38))
@@ -172,7 +173,7 @@ def Detect(oriImg, net, multiplier, param, model, txt='TEXT', display=False):
                         subset[j][-2] += candidate[partBs[i].astype(int), 2] + connection_all[k][i][2]
                 elif found == 2: # if found 2 and disjoint, merge them
                     j1, j2 = subset_idx
-                    print "found = 2"
+                    #print "found = 2"
                     membership = ((subset[j1]>=0).astype(int) + (subset[j2]>=0).astype(int))[:-2]
                     if len(np.nonzero(membership == 2)[0]) == 0: #merge
                         subset[j1][:-2] += (subset[j2][:-2] + 1)
@@ -201,26 +202,40 @@ def Detect(oriImg, net, multiplier, param, model, txt='TEXT', display=False):
     subset = np.delete(subset, deleteIdx, axis=0)
     
     idxSeq = np.arange(0,18)
+    poses = []    
     for n in range(len(subset)):
-        save_name = txt+ '_person_'+str(n)+'.txt'
-        f = open(save_name,'w')
-        print('No '+str(n)+ ' person')
+        if txt is not None:
+            save_name = txt+ '_person_'+str(n)+'.txt'
+            f = open(save_name,'w')
+        #print('No '+str(n)+ ' person')
         for idx in idxSeq:
             index  = subset[n][idx]
             if index == -1:
-                f.write(str(idx))
-                f.write(' None')
-                f.write(' None')
-                f.write('\n')
+                if txt is not None:
+                    f.write(str(idx))
+                    f.write(' None')
+                    f.write(' None')
+                    f.write('\n')
+                point_x = -1
+                point_y = -1
+                point = np.array([point_x, point_y])
+                poses.append(np.expand_dims(point, 0))
                 continue
     
             point_y = candidate[index.astype(int), 1]
             point_x = candidate[index.astype(int), 0]
-            f.write(str(idx))
-            f.write(' '+str(point_x)+' ')
-            f.write(str(point_y))
-            f.write('\n')
-            print(idx, point_x, point_y)
+            
+            point = np.array([point_x, point_y])
+            if txt is not None:
+                f.write(str(idx))
+                f.write(' '+str(point_x)+' ')
+                f.write(str(point_y))
+                f.write('\n')
+            #print(idx, point_x, point_y)
+            poses.append(np.expand_dims(point, 0))
+
+    poses = np.concatenate(poses, 0)
+    
     if display: 
         
         # visualize
@@ -255,9 +270,17 @@ def Detect(oriImg, net, multiplier, param, model, txt='TEXT', display=False):
         #fig = matplotlib.pyplot.gcf()
         #fig.set_size_inches(12, 12)
         #plt.show()
-        return canvas
+        if get_vector:
+            return canvas, poses
+        else:
+            return canvas, None
+        
     else:
-        return None    
+        if get_vector:
+            return None, poses
+        else:
+            return None, None
+          
 
 
 class PoseDet(object):
@@ -268,27 +291,62 @@ class PoseDet(object):
     self.model = model
     self.multiplier = multiplier
     self.net = netInit(param, model)
-  def det(self, img, txt='TEXT', display=False):
-      imgs = Detect(img, self.net, self.multiplier, self.param, self.model, txt=txt, display=display)
-      return imgs
+  def det(self, img, txt='TEXT', display=False, get_vector=False):
+      imgs, pose = Detect(img, self.net, self.multiplier, self.param, self.model, txt=txt, display=display, get_vector=get_vector)
+      return imgs, pose
 
+def get_seq(video):
+    det = PoseDet()
+    pose_seq = []
+    if True:
+        
+        cap = cv.VideoCapture(video)
+        success = cap.isOpened()
+        
+        while success:
+            success, frame = cap.read()
+            if frame is None:
+                break
+            
+            frame_det, pose_vector = det.det(frame, display=False, txt=None, get_vector=True)
+            pose_seq.append(np.expand_dims(pose_vector,0))
+            
+            
+        cap.release()
+
+        pose_seq = np.concatenate(pose_seq, 0) # T x 18 x 2 
+
+    return pose_seq # T x  18 x 2
 
 if __name__ == '__main__':
     import sys
     mode = sys.argv[1]
     assert(mode in ['video', 'cam'])
     det = PoseDet()
-
+    pose_seq = []
     if mode == 'video':
         video_name = sys.argv[2]
+        save_dir = sys.argv[3]
+        save_txt = os.path.join(save_dir, 'TXT')
+        save_img = os.path.join(save_dir, 'IMG')
+        os.makedirs(save_txt)
+        os.makedirs(save_img)
 
         cap = cv.VideoCapture(video_name)
-
+        success = cap.isOpened()
         idx=0
-        while(cap.isOpened()):
-            ret, frame = cap.read()
-            save_name = 'TEXT/frame_'+str(idx)
-            frame_det = det.det(frame, display=True, txt=save_name)
-            cv.imwrite('IMG/frame_'+str(idx)+'.jpg', frame_det)
+        while success:
+            success, frame = cap.read()
+            if frame is None:
+                break
+            save_name = os.path.join(save_txt, 'frame_'+str(idx))
+            frame_det, pose_vector = det.det(frame, display=True, txt=save_name, get_vector=True)
+            pose_seq.append(np.expand_dims(pose_vector,0))
+            cv.imwrite(os.path.join(save_img, '/frame_'+str(idx)+'.jpg'), frame_det)
             idx+=1
         cap.release()
+        import pdb
+        pdb.set_trace()
+        pose_seq = np.concatenate(pose_seq, 0) # T x 18 x 2 
+        np.save(os.path.join(save_dir,'pose_seq.npy'), pose_seq)
+        print(pose_seq.shape)
