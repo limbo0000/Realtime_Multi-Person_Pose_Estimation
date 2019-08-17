@@ -15,7 +15,18 @@ import scipy
 from scipy.ndimage.filters import gaussian_filter
 import imageio
 
+from evaluation_dtw import DTWDistance_pose
+
 __all__=['get_seq']
+
+
+
+def save_video(fn, frames, fwidth, fheight, fps=25):
+    fourcc = cv.VideoWriter_fourcc(*'DIVX')
+    out = cv.VideoWriter(fn, fourcc, fps, (fwidth,fheight))
+    for each in frames:
+        out.write(each)
+    out.release()
 
 def netInit(param, model):
     if param['use_gpu']: 
@@ -28,7 +39,7 @@ def netInit(param, model):
 
 
 def Detect(oriImg, net, multiplier, param, model, txt='TEXT', display=False, get_vector=False):
-    
+    #stime=time.time()
     heatmap_avg = np.zeros((oriImg.shape[0], oriImg.shape[1], 19))
     paf_avg = np.zeros((oriImg.shape[0], oriImg.shape[1], 38))
     
@@ -61,7 +72,7 @@ def Detect(oriImg, net, multiplier, param, model, txt='TEXT', display=False, get
         heatmap_avg = heatmap_avg + heatmap / len(multiplier)
         paf_avg = paf_avg + paf / len(multiplier)
     
-    
+    #mtime=time.time()
     all_peaks = []
     peak_counter = 0
     
@@ -234,7 +245,7 @@ def Detect(oriImg, net, multiplier, param, model, txt='TEXT', display=False, get
             #print(idx, point_x, point_y)
             poses.append(np.expand_dims(point, 0))
 
-    poses = np.concatenate(poses, 0)
+    if get_vector: poses = np.concatenate(poses, 0)
     
     if display: 
         
@@ -270,6 +281,8 @@ def Detect(oriImg, net, multiplier, param, model, txt='TEXT', display=False, get
         #fig = matplotlib.pyplot.gcf()
         #fig.set_size_inches(12, 12)
         #plt.show()
+        #ptime=time.time()
+        #print(mtime-stime,ptime-mtime)
         if get_vector:
             return canvas, poses
         else:
@@ -295,11 +308,12 @@ class PoseDet(object):
       imgs, pose = Detect(img, self.net, self.multiplier, self.param, self.model, txt=txt, display=display, get_vector=get_vector)
       return imgs, pose
 
-def get_seq(video):
+def get_seq(video, display=False,rate=1):
     det = PoseDet()
     pose_seq = []
+    frames = []
     if True:
-        
+        cnt = 0
         cap = cv.VideoCapture(video)
         success = cap.isOpened()
         
@@ -307,46 +321,147 @@ def get_seq(video):
             success, frame = cap.read()
             if frame is None:
                 break
+            cnt +=1
+            if cnt % rate != 0:
+                continue
+            #print(cnt)
             
-            frame_det, pose_vector = det.det(frame, display=False, txt=None, get_vector=True)
+            frame_det, pose_vector = det.det(frame, display=display, txt=None, get_vector=True)
             pose_seq.append(np.expand_dims(pose_vector,0))
             
-            
+            if display:
+                 frames.append(frame_det)
         cap.release()
 
         pose_seq = np.concatenate(pose_seq, 0) # T x 18 x 2 
-
+    if display:
+        return pose_seq, frames
     return pose_seq # T x  18 x 2
+
 
 if __name__ == '__main__':
     import sys
     mode = sys.argv[1]
     assert(mode in ['video', 'cam'])
-    det = PoseDet()
+    #det = PoseDet()
     pose_seq = []
-    if mode == 'video':
-        video_name = sys.argv[2]
-        save_dir = sys.argv[3]
-        save_txt = os.path.join(save_dir, 'TXT')
-        save_img = os.path.join(save_dir, 'IMG')
-        os.makedirs(save_txt)
-        os.makedirs(save_img)
+    # if mode == 'video':
+    #     video_name = sys.argv[2]
+    #     save_dir = sys.argv[3]
+    #     save_txt = os.path.join(save_dir, 'TXT')
+    #     save_img = os.path.join(save_dir, 'IMG')
+    #     os.makedirs(save_txt)
+    #     os.makedirs(save_img)
 
-        cap = cv.VideoCapture(video_name)
-        success = cap.isOpened()
-        idx=0
-        while success:
-            success, frame = cap.read()
-            if frame is None:
-                break
-            save_name = os.path.join(save_txt, 'frame_'+str(idx))
-            frame_det, pose_vector = det.det(frame, display=True, txt=save_name, get_vector=True)
-            pose_seq.append(np.expand_dims(pose_vector,0))
-            cv.imwrite(os.path.join(save_img, '/frame_'+str(idx)+'.jpg'), frame_det)
-            idx+=1
+    #     cap = cv.VideoCapture(video_name)
+    #     success = cap.isOpened()
+    #     idx=0
+    #     while success:
+    #         success, frame = cap.read()
+    #         if frame is None:
+    #             break
+    #         save_name = os.path.join(save_txt, 'frame_'+str(idx))
+    #         frame_det, pose_vector = det.det(frame, display=True, txt=save_name, get_vector=True)
+    #         pose_seq.append(np.expand_dims(pose_vector,0))
+    #         cv.imwrite(os.path.join(save_img, '/frame_'+str(idx)+'.jpg'), frame_det)
+    #         idx+=1
+    #     cap.release()
+    #     import pdb
+    #     pdb.set_trace()
+    #     pose_seq = np.concatenate(pose_seq, 0) # T x 18 x 2 
+    #     np.save(os.path.join(save_dir,'pose_seq.npy'), pose_seq)
+    #     print(pose_seq.shape)
+    
+    import matplotlib.pyplot as plt
+    import time
+
+    if mode == 'cam':
+        cap = cv.VideoCapture(0)
+        (grabbed, frame) = cap.read()
+        fshape = frame.shape
+        fheight = fshape[0]
+        fwidth = fshape[1]
+        print(fwidth , fheight)
+        start_time = time.time()
+        wait_time = 20
+        record_time = 50
+        cnt = 0
+        frames = []
+        print(start_time)
+        save_dir = sys.argv[2]
+        det = PoseDet()
+        while(True):
+
+            ret, frame = cap.read()
+            frame_show = cv.cvtColor(frame, cv.COLOR_BGR2RGB) # the default order of channel is BGR for opencv, for plt, using this function to re-order image as RGB
+            plt.imshow(frame_show)
+            plt.draw()
+            plt.pause(0.005)
+            #plt.close()
+            curr_time = time.time()
+            curr_stage = (curr_time - start_time) % (wait_time + record_time)
+            if int(curr_stage) < wait_time and len(frames) < 1:
+                print('waiting ')
+                continue
+            elif int(curr_stage) < wait_time and len(frames) > 0:
+                print('processing')
+                st = time.time()
+                # ffmpeg
+                #frameout = frames[::3]
+                frameout = frames
+
+                # openpose
+                seq_s_list = []
+                frame_dets = []
+                print(len(frames), len(frameout))
+                for each in frameout:
+
+                    frame_det, pose_vector = det.det(each, display=True, txt=None, get_vector=True)
+                    frame_dets.append(frame_det)
+                    seq_s_list.append(np.expand_dims(pose_vector,0))
+
+                seq_s = np.concatenate(seq_s_list, 0) # T x 18 x 2
+                np.save(os.path.join(save_dir,'seq_s.npy'), seq_s)
+                
+                # dtw
+                #seq_student = np.load('seq_s.npy')
+                seq_student = seq_s
+                seq_teacher = np.load('seq_t.npy')
+                dis = DTWDistance_pose(seq_student, seq_teacher)
+                print(dis)
+
+                save_name = os.path.join(save_dir, 'clip_' + str(cnt) + '.avi')
+                save_video(save_name,frameout, fwidth, fheight)
+                cnt+=1
+                frames = []
+                et = time.time()
+                print(et-st)
+
+            else:
+                print('appending')
+                frames.append(frame)
+            #print(curr_stage)
+            '''
+            if curr_stage == 14:
+                save_name = 'clip_' + str(cnt) + '.avi'
+                #save_video(save_name,frames, fwidth, fheight)
+                cnt+=1
+                frames = []
+            '''
+
+            #import pdb 
+            #pdb.set_trace()
+
+
+            #if cv.waitKey(1) == 65:
+            #    break
+            
+            #frame_det, _ = det.det(frame, display=True, get_vector=False)
+            #cv.imshow('video', frame)
+            # plt.imshow(frame)
+            # plt.show()
+            
+
         cap.release()
-        import pdb
-        pdb.set_trace()
-        pose_seq = np.concatenate(pose_seq, 0) # T x 18 x 2 
-        np.save(os.path.join(save_dir,'pose_seq.npy'), pose_seq)
-        print(pose_seq.shape)
+
+
