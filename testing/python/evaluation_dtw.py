@@ -53,17 +53,17 @@ def DTWDistance_pose(seq_s, seq_t):
 
 
 
-def main():
-   from posedet import get_seq
+def kneecurl_dtw(seq_student, seq_teacher):
+   #from posedet import get_seq
    #seq_student = get_seq('test1.mp4')
    #seq_teacher = get_seq('template1.mp4')
    #import pdb
    #pdb.set_trace()
-   seq_student = np.load('seq_s.npy')
-   seq_teacher = np.load('seq_t.npy')
-   dis = DTWDistance_pose(seq_teacher[:10,:,:], seq_teacher)
-   #dis = DTWDistance_pose(seq_student, seq_teacher)
-   print(dis)
+   #seq_student = np.load('seq_s.npy')
+   #seq_teacher = np.load('seq_t.npy')
+   dis = DTWDistance_pose(seq_student, seq_teacher)
 
-if __name__ == '__main__':
-   main()
+   return dis
+
+# if __name__ == '__main__':
+#    main()
